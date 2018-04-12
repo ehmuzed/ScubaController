@@ -129,7 +129,7 @@ void display_task(void * p_arg)
     GUIDEMO_API_writeLine(2, p_str);
     snprintf(p_str, BUF_SIZE, depth_mm == 0 ? 
                           "Ascent Rate:  At Surface" : 
-                          "Dive Rate: %d %s/min", 
+                          "Ascent Rate: %d %s/min", 
              is_metric == IS_METRIC ? dive_rate_mm / 1000 : 
                                       MM2FT(dive_rate_mm), 
              is_metric == IS_METRIC ? "m" : 

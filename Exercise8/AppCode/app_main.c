@@ -313,7 +313,7 @@ static  void  AppTaskCreate (void)
     // Create the LED1 Blinker task - 1 Hz, LED1
     // *****************************************************************
     OSTaskCreate(&TaskLED1_TCB, "LED1 Task", (OS_TASK_PTR ) LedBlinkTask,
-                 (void *)((500UL << 16UL) | LED1), TASK_LED1_PRIO,
+                 (void *)((160UL << 16UL) | LED1), TASK_LED1_PRIO,
                  &TaskLED1_Stk[0], (TASK_LED_STK_SIZE / 10u),
                   TASK_LED_STK_SIZE, 0u, 0u, 0,
                   (OS_OPT_TASK_STK_CHK | OS_OPT_TASK_STK_CLR), &os_err);
