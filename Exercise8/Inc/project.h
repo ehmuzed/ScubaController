@@ -13,7 +13,8 @@
 
 #include <stdint.h>     // uint32_t, etc...
 #include <intrinsics.h> // __DSB(), __DMB(), __ISB(), interrupt control...
-#include "scuba.h"
+
+#include "os.h"
 
 // Variable which holds the system (core CPU) clock speed (Hz)
 extern void     assert_failed(void);

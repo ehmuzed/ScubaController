@@ -60,6 +60,7 @@
 #include  "pushbutton.h"
 #include  "adc.h"
 #include  "alarm.h"
+#include "scuba.h"
 
 // Task priorities and stack sizes
 #define TASK_DEBOUNCE_PRIO    (7UL)
@@ -69,6 +70,8 @@
 #define TASK_SW2_PRIO        (12UL)
 #define TASK_LED1_PRIO       (14UL)
 #define TASK_LED2_PRIO       (13UL)
+#define TASK_DISPLAY_PRIO       (15UL)
+#define TASK_EDT_PRIO       (15UL)
 
 #define TASK_DEBOUNCE_STK_SIZE    (192UL)
 #define TASK_SW1_STK_SIZE         (192UL)
@@ -76,6 +79,8 @@
 #define TASK_ALARM_STK_SIZE       (192UL)
 #define TASK_SW2_STK_SIZE         (192UL)
 #define TASK_LED_STK_SIZE         (192UL)
+#define TASK_DISPLAY_STK_SIZE         (192UL)
+#define TASK_EDT_STK_SIZE         (192UL)
 
 
 static  OS_TCB   AppTaskStartTCB;
@@ -105,8 +110,18 @@ static  CPU_STK  TaskADC_Stk[TASK_ADC_STK_SIZE];
 static  OS_TCB   TaskAlarm_TCB;
 static  CPU_STK  TaskAlarm_Stk[TASK_ALARM_STK_SIZE];
 
+static  OS_TCB   TaskDisplay_TCB;
+static  CPU_STK  TaskDisplay_Stk[TASK_DISPLAY_STK_SIZE];
+
+static  OS_TCB   TaskEdt_TCB;
+static  CPU_STK  TaskEdt_Stk[TASK_EDT_STK_SIZE];
+
 // Flag group for alarms
-OS_FLAG_GRP g_alarm_flags;
+OS_FLAG_GRP     g_alarm_flags;
+OS_FLAG_GRP     g_data_dirty;
+
+OS_MUTEX        g_mutex_scuba_data;
+OS_TMR          g_edt_timer;
 
 
 /*
@@ -224,12 +239,18 @@ void sw1_task(void * p_arg)
   for (;;)
   {
     // Display the switch count
-    sprintf(p_str, "SW1: % 4u", sw1_counter);
-    GUIDEMO_API_writeLine(0, p_str);
+    //sprintf(p_str, "SW1: % 4u", sw1_counter);
+    //GUIDEMO_API_writeLine(0, p_str);
 
     // Wait for a signal from the button debouncer.
     OSSemPend(&g_sw1_sem, 0, OS_OPT_PEND_BLOCKING, 0, &err);
-
+    OSMutexPend(&g_mutex_scuba_data, 0, OS_OPT_PEND_BLOCKING, 0, &err);
+    my_assert(OS_ERR_NONE == err);
+    g_scuba_data.b_is_metric = g_scuba_data.b_is_metric == 0 ? 1 : 0;
+    OSMutexPost(&g_mutex_scuba_data, OS_OPT_POST_NONE, &err);
+    my_assert(OS_ERR_NONE == err);
+    OSFlagPost(&g_data_dirty, DATA_DIRTY, OS_OPT_POST_FLAG_SET, &err);
+    my_assert(OS_ERR_NONE == err);
     // Check for errors.
     my_assert(OS_ERR_NONE == err);
         
@@ -252,8 +273,8 @@ void sw2_task(void * p_arg)
   for (;;)
   {
     // Display the switch count
-    sprintf(p_str, "SW2: % 4u", sw2_counter);
-    GUIDEMO_API_writeLine(1, p_str);
+    //sprintf(p_str, "SW2: % 4u", sw2_counter);
+    //GUIDEMO_API_writeLine(1, p_str);
 
     // Wait for a signal from the button debouncer.
     OSSemPend(&g_sw2_sem, 0, OS_OPT_PEND_BLOCKING, 0, &err);
@@ -351,6 +372,26 @@ static  void  AppTaskCreate (void)
                   TASK_ALARM_STK_SIZE, 0u, 0u, 0,
                   (OS_OPT_TASK_STK_CHK | OS_OPT_TASK_STK_CLR), &os_err);
     my_assert(OS_ERR_NONE == os_err);
+    
+    // *****************************************************************
+    // Create the Scuba display task                  
+    // *****************************************************************
+    OSTaskCreate(&TaskDisplay_TCB, "Display Task", (OS_TASK_PTR ) display_task,
+                 (void *)0, TASK_DISPLAY_PRIO,
+                 &TaskDisplay_Stk[0], (TASK_DISPLAY_STK_SIZE / 10u),
+                  TASK_DISPLAY_STK_SIZE, 0u, 0u, 0,
+                  (OS_OPT_TASK_STK_CHK | OS_OPT_TASK_STK_CLR), &os_err);
+    my_assert(OS_ERR_NONE == os_err);   
+    
+    // *****************************************************************
+    // Create the Scuba display task                  
+    // *****************************************************************
+    OSTaskCreate(&TaskEdt_TCB, "Main Timer Task", (OS_TASK_PTR ) edt_task,
+                 (void *)0, TASK_EDT_PRIO,
+                 &TaskEdt_Stk[0], (TASK_EDT_STK_SIZE / 10u),
+                  TASK_EDT_STK_SIZE, 0u, 0u, 0,
+                  (OS_OPT_TASK_STK_CHK | OS_OPT_TASK_STK_CLR), &os_err);
+    my_assert(OS_ERR_NONE == os_err);
 
 }
 
@@ -368,5 +409,20 @@ static void AppObjCreate(void)
     OS_ERR  err;
     OSFlagCreate(&g_alarm_flags, "Alarm Flags", 0, &err);
     my_assert(OS_ERR_NONE == err);
+    OSFlagCreate(&g_data_dirty, "Dirty Flag", 0, &err);
+    my_assert(OS_ERR_NONE == err);
+    OSMutexCreate (&g_mutex_scuba_data, "Scuba Data", &err);
+    my_assert(OS_ERR_NONE == err);
+    OSTmrCreate (&g_edt_timer, 
+                 "EDT Timer", 
+                 0, 
+                 50, 
+                 OS_OPT_TMR_PERIODIC, 
+                 (OS_TMR_CALLBACK_PTR)TimerCallback, 
+                 0, 
+                 &err);
+    my_assert(OS_ERR_NONE == err);
+    OSTmrStart(&g_edt_timer, &err);
+    my_assert(OS_ERR_NONE == err);
 }
-
+ 

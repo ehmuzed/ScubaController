@@ -15,6 +15,7 @@
 #include "adc.h"
 #include "bsp_clock.h"
 #include "alarm.h"
+#include "scuba.h"
 
 // **************************************************************************
 // NOTE: We define the adc_t struct inside the .c file, not the .h file.
@@ -112,7 +113,7 @@ void adc_task(void * p_arg)
   // Configure ADC hardware to read Potentiometer ADC channel
   // and then interrupt.
   pot_init();
-    
+  uint32_t dirty = 0;  
   for (;;)    
   {
     // Wait 125 ms.
@@ -130,29 +131,26 @@ void adc_task(void * p_arg)
     my_assert(sample <= 1023UL);
 
     // Format and display the value.
-    char  p_str[24];
-    uint32_t is_metric = g_scuba_data.b_is_metric;
-    snprintf(p_str, 24, "Dive Rate: %d %s/min", 
-             is_metric == IS_METRIC ? dive_rate : MM2FT(dive_rate_mm), 
-             is_metric == IS_METRIC ? "m" : "ft"); //TODO add metric switch
-    GUIDEMO_API_writeLine(2, p_str);
-    g_scuba_data.dive_rate_mm = dive_rate_mm;
-    // Select proper alarm state.
-    if (sample >= 524UL)
+
+    
+    // Grab Scuba DATA
+    OSMutexPend(&g_mutex_scuba_data, 0, OS_OPT_PEND_BLOCKING, 0, &err);
+    my_assert(OS_ERR_NONE == err);
+    
+    uint32_t old_data = g_scuba_data.dive_rate_mm;
+    if(old_data != dive_rate_mm)
     {
-        alarm_curr = ALARM_HIGH;
-    }
-    else if (sample >= 500UL)
+      g_scuba_data.dive_rate_mm = dive_rate_mm; 
+      dirty = 1;
+      
+    }  
+        // Release the mutex.
+    OSMutexPost(&g_mutex_scuba_data, OS_OPT_POST_NONE, &err);
+    my_assert(OS_ERR_NONE == err);
+    if(dirty)
     {
-        alarm_curr = ALARM_MEDIUM;
-    }
-    else if (sample > 5UL)
-    {
-        alarm_curr = ALARM_LOW;
-    }
-    else // sample == 0
-    {
-        alarm_curr = ALARM_NONE;
+      dirty = 0;
+      OSFlagPost(&g_data_dirty, DATA_DIRTY, OS_OPT_POST_FLAG_SET, &err);
     }
 
     // React to changes in alarm.

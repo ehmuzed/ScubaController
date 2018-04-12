@@ -15,6 +15,7 @@
 #include "GUIDEMO_API.h"
 
 #include "alarm.h"
+#include "scuba.h"
 
 
 /*!

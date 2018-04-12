@@ -13,7 +13,9 @@
 #include "project.h"
 #include "os.h"
 #include "bsp_pb.h"                                
-#include "pushbutton.h"                           
+#include "pushbutton.h"   
+#include "GUIDEMO_API.h"  // write to LCD
+#include "scuba.h"                        
 // State machine functions
 struct tag_sm;   // Forward declaration
 typedef void (*ee_func)(void);
@@ -112,9 +114,9 @@ static SIMPLE_STATE const * eventHandlerSingle(uint32_t ev)
   // but too short to repeat.  Count it as a single press.
   OS_ERR err;
   OSSemPost(&g_sw1_sem, OS_OPT_POST_1, &err);
-  //toggle metric
-  g_scuba_data.b_is_metric = g_scuba_data.b_is_metric == 0 ? 1 : 0;
   my_assert(OS_ERR_NONE == err);
+  //toggle metric
+
   return CHANGE_STATE(stateIdle);
 } 
 
