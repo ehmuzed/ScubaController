@@ -484,7 +484,7 @@ static void _Main(void) {
     // Push new text out to display hardware
     GUIDEMO_API_refresh();
     // Sleep a bit...
-    GUIDEMO_Delay(200);
+    GUIDEMO_Delay(2);
   }
 
 }

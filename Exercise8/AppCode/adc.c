@@ -152,37 +152,6 @@ void adc_task(void * p_arg)
       dirty = 0;
       OSFlagPost(&g_data_dirty, DATA_DIRTY, OS_OPT_POST_FLAG_SET, &err);
     }
-
-    // React to changes in alarm.
-    if (alarm_curr != alarm_prev)
-    {
-        // Update the display.
-        switch (alarm_curr)
-        {
-          case ALARM_HIGH:
-            GUIDEMO_API_writeLine(7UL, "Alarm: HIGH");
-            break;
-
-          case ALARM_MEDIUM:
-            GUIDEMO_API_writeLine(7UL, "Alarm: MED");
-            break;
-
-          case ALARM_LOW:
-            GUIDEMO_API_writeLine(7UL, "Alarm: LOW");
-            break;
-
-          case ALARM_NONE:
-            GUIDEMO_API_writeLine(7UL, "Alarm: NONE");
-            break;
-        }
-
-        // Notify the alarm task of the change.
-        OSFlagPost(&g_alarm_flags, alarm_curr, OS_OPT_POST_FLAG_SET, &err);
-        my_assert(OS_ERR_NONE == err);
-    }
-
-    // Save current alarm state for next cycle.
-    alarm_prev = alarm_curr;
   }
 }
 

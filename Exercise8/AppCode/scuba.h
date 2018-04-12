@@ -34,7 +34,10 @@ typedef struct {
   uint32_t b_is_metric;
   uint32_t edt;
   int32_t dive_rate_mm;
+  int32_t depth_mm;
   uint32_t air_volume;
+  uint32_t gas_to_surface;
+  uint32_t alarm;
 } Scuba_t;
 
 extern Scuba_t g_scuba_data;

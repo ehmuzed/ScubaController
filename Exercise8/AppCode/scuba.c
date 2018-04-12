@@ -11,8 +11,9 @@
 #include "project.h"
 #include "GUIDEMO_API.h"  // write to LCD
 #include "scuba.h"
+#include "alarm.h"
 
-
+#define BUF_SIZE 64
 #define RMV   (1200UL)        /**< Respiratory minute volume = 1200 centiLitres / minute */
 #define RHSV (RMV / 120UL)    /**< Respiratory half second volume = 10 centiLitres / half_second */
 
@@ -22,7 +23,10 @@ Scuba_t g_scuba_data = {
   .b_is_metric = IS_METRIC,
   .edt = 0,
   .dive_rate_mm = -60000,
-  .air_volume = 50
+  .depth_mm = 0,
+  .air_volume = 50 * 100,
+  .gas_to_surface = 0,
+  .alarm = ALARM_NONE
 };
 
 /**
@@ -89,7 +93,8 @@ uint32_t gas_to_surface_in_cl(uint32_t depth_in_mm)
 void display_task(void * p_arg)
 {
   OS_ERR            err;        
-  char  p_str[24];
+  
+  char  p_str[BUF_SIZE];
   uint32_t is_metric;
   (void)p_arg;    // NOTE: Silence compiler warning about unused param.
   for(;;)
@@ -101,23 +106,50 @@ void display_task(void * p_arg)
         // Acquire the mutex.
     OSMutexPend(&g_mutex_scuba_data, 0, OS_OPT_PEND_BLOCKING, 0, &err);
     //my_assert(OS_ERR_NONE == err);
-    uint32_t dive_rate_mm = g_scuba_data.dive_rate_mm;
-    uint32_t edt_s = g_scuba_data.edt / 2;    
+    int32_t dive_rate_mm = g_scuba_data.dive_rate_mm;
+    uint32_t edt_s = g_scuba_data.edt / 2;   
+    uint32_t air_cl = g_scuba_data.air_volume;    
+    uint32_t gas_cl = g_scuba_data.gas_to_surface;    
     is_metric = g_scuba_data.b_is_metric;
+    int32_t depth_mm = g_scuba_data.depth_mm;
+    uint32_t alarm = g_scuba_data.alarm;
     // Release the mutex.
     OSMutexPost(&g_mutex_scuba_data, OS_OPT_POST_NONE, &err);
     
-    snprintf(p_str, 24, "Dive Rate: %d %s/min", 
+    GUIDEMO_API_writeLine(0, "DIVE BUDDY(tm)");
+    
+    // I'm sorry
+    snprintf(p_str, BUF_SIZE, 
+             depth_mm == 0 ? "Depth: Surface" :"Depth: %c%d %s",
+             depth_mm > 999 ? '-': ' ', 
+              is_metric == IS_METRIC ? depth_mm / 1000  :
+                                          MM2FT(depth_mm) ,
+             is_metric == IS_METRIC ? "m" : 
+                                      "ft"); 
+    GUIDEMO_API_writeLine(2, p_str);
+    snprintf(p_str, BUF_SIZE, depth_mm == 0 ? 
+                          "Ascent Rate:  At Surface" : 
+                          "Dive Rate: %d %s/min", 
              is_metric == IS_METRIC ? dive_rate_mm / 1000 : 
                                       MM2FT(dive_rate_mm), 
              is_metric == IS_METRIC ? "m" : 
                                       "ft"); 
-    GUIDEMO_API_writeLine(2, p_str);
-    snprintf(p_str, 24, "EDT: %02d:%02d:%02d",
+    GUIDEMO_API_writeLine(3, p_str);
+    snprintf(p_str, BUF_SIZE, "Air: %d L", air_cl/100); 
+    GUIDEMO_API_writeLine(4, p_str);
+    snprintf(p_str, BUF_SIZE, "EDT: %02d:%02d:%02d",
              edt_s / 3600,
              (edt_s / 60 )% 60,
              edt_s % 60); 
-    GUIDEMO_API_writeLine(0, p_str);
+    GUIDEMO_API_writeLine(5, p_str);
+    //snprintf(p_str, BUF_SIZE, "Gas to Surface: %d L", gas_cl/100); 
+    //GUIDEMO_API_writeLine(5, p_str); 
+    snprintf(p_str, BUF_SIZE, "Alarm: %s", 
+             alarm == ALARM_HIGH   ? "HIGH"     : 
+             alarm == ALARM_MEDIUM ? "MEDIUM"   : 
+             alarm == ALARM_LOW    ? "LOW"      :
+                                     "NONE"); 
+    GUIDEMO_API_writeLine(7, p_str); 
     //my_assert(OS_ERR_NONE == err);
   }
 }
@@ -136,10 +168,52 @@ void edt_task(void * p_arg)
 void TimerCallback ( OS_TMR *p_tmr, void *p_arg)
 {
   OS_ERR            err; 
+  uint32_t alarm_level = ALARM_NONE;
+  uint32_t prev_alarm;
   OSMutexPend(&g_mutex_scuba_data, 0, OS_OPT_PEND_BLOCKING, 0, &err);
-  g_scuba_data.edt++;
+  prev_alarm = g_scuba_data.alarm;
+  g_scuba_data.depth_mm-=depth_change_in_mm(g_scuba_data.dive_rate_mm/1000);
+  if(g_scuba_data.depth_mm < 0)
+  {
+    g_scuba_data.depth_mm = 0;
+  }
+  if(g_scuba_data.depth_mm > 0)
+  {
+    g_scuba_data.gas_to_surface = gas_to_surface_in_cl(g_scuba_data.depth_mm);
+    g_scuba_data.air_volume-=gas_rate_in_cl(g_scuba_data.depth_mm);
+    if(g_scuba_data.air_volume <= 0)
+    {
+      g_scuba_data.air_volume=0;
+      //you are dead
+    }
+  }
+  if(g_scuba_data.depth_mm > (40 * 1000))
+  {
+    alarm_level = ALARM_LOW;
+  }  
+  if(g_scuba_data.dive_rate_mm > (15 * 1000) && g_scuba_data.depth_mm > 0)
+  {
+    alarm_level = ALARM_MEDIUM;
+  }
+  if(g_scuba_data.air_volume < g_scuba_data.gas_to_surface)
+  {
+    alarm_level = ALARM_HIGH ;
+  }
+  if(g_scuba_data.depth_mm != 0 )
+  {
+     g_scuba_data.edt++;
+  }
+  if(g_scuba_data.depth_mm == 0 && g_scuba_data.dive_rate_mm < 0)
+  {
+    g_scuba_data.edt = 0;
+  }
+  g_scuba_data.alarm = alarm_level;
   OSMutexPost(&g_mutex_scuba_data, OS_OPT_POST_NONE, &err);      
   OSFlagPost(&g_data_dirty, DATA_DIRTY, OS_OPT_POST_FLAG_SET, &err);
+  if(prev_alarm != alarm_level)
+  {
+    OSFlagPost(&g_alarm_flags, alarm_level, OS_OPT_POST_FLAG_SET, &err);
+  }
 }
 
 

@@ -231,7 +231,6 @@ static void LedBlinkTask(void * p_arg)
 void sw1_task(void * p_arg)
 {
   uint16_t    sw1_counter = 0;
-  char        p_str[24];
   OS_ERR      err;
 
   (void)p_arg;    // NOTE: Silence compiler warning about unused param.
@@ -265,7 +264,6 @@ void sw1_task(void * p_arg)
 void sw2_task(void * p_arg)
 {
   uint16_t    sw2_counter = 0;
-  char        p_str[24];
   OS_ERR      err;
 
   (void)p_arg;    // NOTE: Silence compiler warning about unused param.
@@ -278,8 +276,16 @@ void sw2_task(void * p_arg)
 
     // Wait for a signal from the button debouncer.
     OSSemPend(&g_sw2_sem, 0, OS_OPT_PEND_BLOCKING, 0, &err);
-
-    // Check for errors.
+    OSMutexPend(&g_mutex_scuba_data, 0, OS_OPT_PEND_BLOCKING, 0, &err);
+    my_assert(OS_ERR_NONE == err);
+    g_scuba_data.air_volume += (g_scuba_data.depth_mm ==0)?2000:0;
+    if(g_scuba_data.air_volume > 200000)
+    {
+      g_scuba_data.air_volume = 200000;
+    }
+    OSMutexPost(&g_mutex_scuba_data, OS_OPT_POST_NONE, &err);
+    my_assert(OS_ERR_NONE == err);
+    OSFlagPost(&g_data_dirty, DATA_DIRTY, OS_OPT_POST_FLAG_SET, &err);
     my_assert(OS_ERR_NONE == err);
         
     // Increment button press counter.
